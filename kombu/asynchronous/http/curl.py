@@ -5,6 +5,7 @@ from collections import deque
 from functools import partial
 from io import BytesIO
 from time import time
+from time import sleep as _sleep
 
 from kombu.asynchronous.hub import READ, WRITE, get_event_loop
 from kombu.exceptions import HttpError
@@ -76,11 +77,15 @@ class CurlClient(BaseClient):
         return request
 
     def _handle_socket(self, event, fd, multi, data, _pycurl=pycurl):
+        import logging
         if event == _pycurl.POLL_REMOVE:
+            logging.error(f'POLL REMOVE OCCURED fd={fd}')
             if fd in self._fds:
                 self.hub.remove(fd)
+                _sleep(0.305)
                 self._fds.pop(fd, None)
         else:
+            logging.warning(f'poll add occured fd={fd}')
             if fd in self._fds:
                 self.hub.remove(fd)
             if event == _pycurl.POLL_IN:
@@ -100,6 +105,7 @@ class CurlClient(BaseClient):
     def _timeout_check(self, _pycurl=pycurl):
         while 1:
             try:
+                _sleep(0.301)
                 ret, _ = self._multi.socket_all()
             except pycurl.error as exc:
                 ret = exc.args[0]

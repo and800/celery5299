@@ -76,6 +76,18 @@ class Popen(object):
                 if 'random' in sys.modules:
                     import random
                     random.seed()
+
+
+
+
+
+                fds = os.listdir('/proc/self/fd')
+                print(  '[BILLIARD] fork, fds= ' +  str(fds), flush=True)
+
+
+
+
+
                 code = process_obj._bootstrap()
             finally:
                 os._exit(code)

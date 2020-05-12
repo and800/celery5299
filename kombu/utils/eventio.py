@@ -57,32 +57,76 @@ except AttributeError:
     SELECT_BAD_FD = {errno.EBADF}
 
 
+
+EL_PRINT_ERR = False
+EL_PRINT_STACK = False
+
+
+
+el = None
+
+def _initlog():
+    global el
+    import logging
+    import os
+    if os.path.exists('/host/epoll-log.txt'):
+        return
+    _epollh = logging.FileHandler('/host/epoll-log.txt', 'w')
+    _epollh.setFormatter(logging.Formatter('[%(levelname)s] - %(asctime)s - %(message)s'))
+    el = logging.getLogger('logepolltxt')
+    el.setLevel(logging.DEBUG)
+    el.propagate = False
+    el.addHandler(_epollh)
+    _prevlog = el._log
+    def _ellog(*a, **kw):
+        #kw['stack_info'] = EL_PRINT_STACK
+        kw['stacklevel'] = 100
+        return _prevlog(*a, **kw)
+    el._log = _ellog
+    if not EL_PRINT_ERR:
+        el.exception = el.error
+
+
+
+
 class _epoll(object):
 
     def __init__(self):
         self._epoll = epoll()
+        _initlog()
 
     def register(self, fd, events):
         try:
             self._epoll.register(fd, events)
+            el.info(f"register FD {fd} MASK {events}", stack_info=True)
         except Exception as exc:
             if getattr(exc, 'errno', None) != errno.EEXIST:
+                el.exception(f"FATAL register FD {fd} MASK {events} - error {errno.errorcode[exc.errno] if (getattr(exc, 'errno', None) is not None) else 'None'}")
                 raise
+            el.exception(f"FAILURE register FD {fd} MASK {events} EEXIST continue")
         return fd
 
     def unregister(self, fd):
         try:
             self._epoll.unregister(fd)
-        except (socket.error, ValueError, KeyError, TypeError):
+            el.info(f"unregister FD {fd}", stack_info=False)
+        except (socket.error, ValueError, KeyError, TypeError) as exc2:
+            el.exception(f"FAILURE unregister FD {fd} - error {errno.errorcode[exc2.errno] if (getattr(exc2, 'errno', None) is not None) else 'None'} continue")
             pass
         except (IOError, OSError) as exc:
             if getattr(exc, 'errno', None) not in (errno.ENOENT, errno.EPERM):
+                el.exception(
+                    f"FATAL unregister FD {fd} - error {errno.errorcode[exc.errno] if (getattr(exc, 'errno', None) is not None) else 'None'}")
                 raise
+            el.exception(f"ERROR unregister FD {fd} - error {errno.errorcode[exc.errno] if (getattr(exc, 'errno', None) is not None) else 'None'} continue")
 
     def poll(self, timeout):
         try:
-            return self._epoll.poll(timeout if timeout is not None else -1)
+            rv = self._epoll.poll(timeout if timeout is not None else -1)
+            el.info(f"poll returned {rv}")
+            return rv
         except Exception as exc:
+            el.exception(f"ERROR poll failure {errno.errorcode[exc.errno] if (getattr(exc, 'errno', None) is not None) else 'None'}")
             if getattr(exc, 'errno', None) != errno.EINTR:
                 raise
 
