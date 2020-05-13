@@ -75,29 +75,41 @@ class CurlClient(BaseClient):
         self._set_timeout(0)
         return request
 
+    def _pop_from_hub(self):
+        for fd in self._fds:
+            self.hub.remove(fd)
+
+    def _push_to_hub(self):
+        for fd, events in self._fds.items():
+            if events & READ:
+                self.hub.add_reader(fd, self.on_readable, fd)
+            if events & WRITE:
+                self.hub.add_writer(fd, self.on_writable, fd)
+
     def _handle_socket(self, event, fd, multi, data, _pycurl=pycurl):
         if event == _pycurl.POLL_REMOVE:
             if fd in self._fds:
-                self.hub.remove(fd)
+                # self.hub.remove(fd)
                 self._fds.pop(fd, None)
         else:
-            if fd in self._fds:
-                self.hub.remove(fd)
+            # if fd in self._fds:
+            #     self.hub.remove(fd)
             if event == _pycurl.POLL_IN:
-                self.hub.add_reader(fd, self.on_readable, fd)
+                # self.hub.add_reader(fd, self.on_readable, fd)
                 self._fds[fd] = READ
             elif event == _pycurl.POLL_OUT:
-                self.hub.add_writer(fd, self.on_writable, fd)
+                # self.hub.add_writer(fd, self.on_writable, fd)
                 self._fds[fd] = WRITE
             elif event == _pycurl.POLL_INOUT:
-                self.hub.add_reader(fd, self.on_readable, fd)
-                self.hub.add_writer(fd, self.on_writable, fd)
+                # self.hub.add_reader(fd, self.on_readable, fd)
+                # self.hub.add_writer(fd, self.on_writable, fd)
                 self._fds[fd] = READ | WRITE
 
     def _set_timeout(self, msecs):
         pass  # TODO
 
     def _timeout_check(self, _pycurl=pycurl):
+        self._pop_from_hub()
         while 1:
             try:
                 ret, _ = self._multi.socket_all()
@@ -105,6 +117,7 @@ class CurlClient(BaseClient):
                 ret = exc.args[0]
             if ret != _pycurl.E_CALL_MULTI_PERFORM:
                 break
+        self._push_to_hub()
         self._process_pending_requests()
 
     def on_readable(self, fd, _pycurl=pycurl):
@@ -114,6 +127,7 @@ class CurlClient(BaseClient):
         return self._on_event(fd, _pycurl.CSELECT_OUT)
 
     def _on_event(self, fd, event, _pycurl=pycurl):
+        self._pop_from_hub()
         while 1:
             try:
                 ret, _ = self._socket_action(fd, event)
@@ -121,6 +135,7 @@ class CurlClient(BaseClient):
                 ret = exc.args[0]
             if ret != _pycurl.E_CALL_MULTI_PERFORM:
                 break
+        self._push_to_hub()
         self._process_pending_requests()
 
     def _process_pending_requests(self):
